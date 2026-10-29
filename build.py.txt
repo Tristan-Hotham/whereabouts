@@ -1,0 +1,185 @@
+import csv,json,math,re
+from collections import defaultdict
+from shapely.geometry import shape,Point
+from shapely import STRtree
+P='repos/'
+H=json.load(open('higher-or-lower/data.json'))
+places=H['places']; cats={c['id']:c for c in H['cats']}
+geo=json.load(open(P+'footpaths/data/lad.geojson'))
+polys=[shape(f['geometry']) for f in geo['features']]; codes=[f['properties']['code'] for f in geo['features']]
+tree=STRtree(polys)
+def lad(lon,lat):
+    pt=Point(lon,lat)
+    for i in tree.query(pt):
+        if polys[i].contains(pt): return codes[i]
+    # nearest (coastal points)
+    j=min(range(len(polys)),key=lambda i:polys[i].distance(pt)); return codes[j] if polys[j].distance(pt)<0.05 else None
+def km(a,b,c,d):
+    R=6371;p1,p2=math.radians(a),math.radians(c);dp=p2-p1;dl=math.radians(d-b)
+    return 2*R*math.asin(math.sqrt(math.sin(dp/2)**2+math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2))
+# towns (sun-and-rain): dedupe, prefer GeoNames rows with population
+rows=list(csv.DictReader(open(P+'sun-and-rain-uk/data/towns.csv')))
+from pyproj import Transformer
+_tr=Transformer.from_crs(27700,4326,always_xy=True)
+for r in rows:
+    lo,la=_tr.transform(float(r['e']),float(r['n'])); r['lat'],r['lon']=str(la),str(lo)
+rows.sort(key=lambda r:(r['source']!='GeoNames'))
+CITIES={r['name'] for r in rows if r['kind']=='City'}
+towns=[]
+for r in rows:
+    lat,lon=float(r['lat']),float(r['lon'])
+    if any(t['n']==r['name'] and km(lat,lon,t['lat'],t['lon'])<15 for t in towns): continue
+    towns.append(dict(n=r['name'],lat=lat,lon=lon,kind=r['kind'],pop=float(r['population']) if r['population'] else None,
+        sun=float(r['sun']),rain=float(r['rain']),jul=float(r['tmax_Jul']),nation=r['nation']))
+# BUA populations (E&W + GB) for better numbers and extra guessable places
+bua=list(csv.DictReader(open(P+'postbox-kings/data/towns.csv')))
+for t in towns:
+    best=None
+    for b in bua:
+        if b['BUA22NM']==t['n'] or b['BUA22NM'].split(' (')[0]==t['n']:
+            d=km(t['lat'],t['lon'],float(b['LAT']),float(b['LONG']))
+            if d<10 and (best is None or d<best[0]): best=(d,float(b['pop2021'] or 0))
+    if best and best[1]>0: t['pop']=best[1]; t['bua']=True
+print('towns',len(towns))
+# guess list: towns + BUAs over 2,000 people not already listed
+guess=[(t['n'],t['lat'],t['lon']) for t in towns]
+have=defaultdict(list)
+for n,la,lo in guess: have[n].append((la,lo))
+for b in bua:
+    n=b['BUA22NM'].split(' (')[0]; la,lo=float(b['LAT']),float(b['LONG'])
+    if float(b['pop2021'] or 0)<2000: continue
+    if any(km(la,lo,x,y)<10 for x,y in have[n]): continue
+    guess.append((n,la,lo)); have[n].append((la,lo))
+print('guessable',len(guess))
+# label each guess with its council's area label for disambiguation
+G=[]
+for n,la,lo in guess:
+    c=lad(lo,la)
+    if not c or c not in places: continue
+    G.append([n,round(la,4),round(lo,4),c])
+# names that repeat get a hint
+cnt=defaultdict(int)
+for g in G: cnt[g[0]]+=1
+# answer pool
+sunr=sorted(t['sun'] for t in towns); julr=sorted(t['jul'] for t in towns)
+def pct(arr,v): return round(100*sum(1 for x in arr if x<v)/len(arr))
+FUNIDS=[k for k,c in cats.items() if c['group']=='Just for fun' and k not in ('english','irishpass','walk','threecars')]
+SERIOUS=[k for k,c in cats.items() if c['group']!='Just for fun' and k not in ('pop','area','density')]
+def rank_of(k,code):
+    v=cats[k]['v']; ks=sorted(v,key=lambda x:-v[x]); return ks.index(code)+1,len(ks),v[code]
+def quirk(code):
+    def fun(lim):
+        best=None
+        for k in FUNIDS:
+            v=cats[k]['v']
+            if code not in v or v[code]==0: continue
+            r,n,val=rank_of(k,code)
+            if r<=n*lim and (best is None or r/n<best[0]): best=(r/n,k,r,n,val,'hi')
+        return best
+    def ser(lim):
+        best=None
+        for k in SERIOUS:
+            v=cats[k]['v']
+            if code not in v: continue
+            r,n,val=rank_of(k,code)
+            for frac,side,rr in ((r/n,'hi',r),((n-r+1)/n,'lo',n-r+1)):
+                if frac<=lim and (best is None or frac<best[0]): best=(frac,k,rr,n,val,side)
+        return best
+    return fun(0.05) or ser(0.05) or fun(0.10) or ser(0.10) or fun(0.15)
+def fmt(c,x):
+    f=c['fmt']
+    if f=='gbp': return '£{:,.0f}'.format(x)
+    if f=='pct': return ('%.1f%%'%x) if c['dp']==1 else ('%.2f%%'%x)
+    if f=='int': return '{:,.0f}'.format(x)
+    return ('%.1f'%x)
+def ordn(n): return str(n)+('th' if 10<=n%100<=20 else {1:'st',2:'nd',3:'rd'}.get(n%10,'th'))
+def nat_of(t): return {'England':'E','Wales':'W','Scotland':'S','Northern Ireland':'N'}[t['nation']]
+
+# ---------- what the name means (common elements; hedged) ----------
+PRE=[('aber','Aber- is Brittonic for a river mouth or the meeting of waters.'),('inver','Inver- is Gaelic for a river mouth or confluence.'),
+('llan','Llan- is Welsh for a church enclosure, usually followed by a saint\'s name.'),('pen','Pen- is Brittonic for a head, top or hill.'),
+('tre','Tre- is Welsh and Cornish for a farmstead or settlement.'),('caer','Caer- is Welsh for a fort, often a Roman one.'),('pont','Pont- is Welsh for a bridge.'),
+('bally','Bally- is Irish for a townland or settlement.'),('bal','Bal- is often Gaelic baile, a farmstead or township.'),('kil','Kil- is usually Gaelic cill, a church or monk\'s cell.'),
+('dun','Dun- is usually Gaelic or Brittonic for a fort or hill.'),('dum','Dum- is usually Gaelic dùn, a fort.'),('strath','Strath- is Gaelic for a wide valley.'),('glen','Glen- is Gaelic for a narrow valley.'),
+('kirk','Kirk- comes from Old Norse kirkja, a church.'),('auch','Auch- is Gaelic achadh, a field.'),('drum','Drum- is Gaelic druim, a ridge.'),('king','King- usually means the place once belonged to the king (Old English cyning).'),('kin','Kin- is Gaelic ceann, a head or end.'),
+('newton','Newton is Old English for the new farmstead or village.'),('new','New- means just that: a settlement founded later than its neighbours.')]
+SUF=[('chester','-chester comes from Old English ceaster, borrowed from Latin castra: a Roman fort or walled town.'),('caster','-caster comes from Old English ceaster, from Latin castra: a Roman fort or walled town.'),
+('cester','-cester comes from Old English ceaster, from Latin castra: a Roman fort or walled town.'),('thorpe','-thorpe is usually Old Norse þorp, an outlying farm or small settlement.'),('thorp','-thorp is usually Old Norse þorp, an outlying farm or small settlement.'),
+('thwaite','-thwaite is Old Norse þveit, a clearing or meadow.'),('toft','-toft is Old Norse for a homestead plot.'),('by','-by is usually Old Norse býr, a farmstead or village: a sign of Viking settlement.'),
+('minster','-minster is Old English mynster, a large church or monastery.'),('mouth','-mouth marks the mouth of a river.'),('bridge','-bridge means what it says: a bridge, usually an early one.'),
+('borough','-borough comes from Old English burh, a fortified place, later a town.'),('brough','-brough comes from Old English burh, a fortified place.'),('burgh','-burgh comes from Old English burh, a fortified place or town.'),
+('bury','-bury comes from Old English byrig, from burh: a fortified place, later a manor or town.'),('ham','-ham is usually Old English hām, a homestead or village (sometimes hamm, a river meadow).'),
+('ton','-ton is Old English tūn, a farmstead or estate, later a village. It is the commonest English place-name ending.'),('ley','-ley is Old English lēah, a woodland clearing.'),('leigh','-leigh is Old English lēah, a woodland clearing.'),
+('ly','-ly is often Old English lēah, a woodland clearing.'),('field','-field is Old English feld, open country.'),('ford','-ford is a river crossing.'),('wich','-wich is usually Old English wīc, a trading place or specialised farm; several -wich towns made salt.'),
+('wick','-wick is Old English wīc, a trading place or specialised farm (or Old Norse vík, a bay, in the north).'),('worth','-worth is Old English worð, an enclosure or enclosed farm.'),('hurst','-hurst is Old English hyrst, a wooded hill.'),
+('den','-den is usually Old English denu, a valley, or denn, a woodland pasture for pigs.'),('don','-don is usually Old English dūn, a hill.'),('well','-well is Old English wella, a spring or stream.'),('wells','-wells refers to springs.'),
+('stow','-stow is Old English stōw, a place of assembly or a holy place.'),('stead','-stead is Old English stede, a place or site.'),('combe','-combe is Old English cumb, a valley, a word borrowed from Brittonic.'),
+('pool','-pool is Old English pōl, a pool or creek.'),('port','-port is Old English, from Latin portus: a harbour or a market town.'),('dale','-dale is a valley, from Old Norse dalr or Old English dæl.'),
+('ey','-ey is often Old English ēg, an island or dry ground in marsh.'),('sey','-ey is often Old English ēg, an island or dry ground in marsh.'),('ing','-ing usually means "the people of", or a place belonging to someone.'),('ings','-ings usually means "the people of" a leader.'),
+('field','-field is Old English feld, open country.'),('mere','-mere is Old English for a lake or pool.'),('church','-church means a church.'),('kirk','-kirk is Old Norse kirkja, a church.'),('stowe','-stowe is Old English stōw, a place of assembly or a holy place.'),('cliffe','-cliffe is Old English clif, a bank or slope.')]
+SPECIAL={'Durham':'Durham is probably Old English dūn plus Old Norse holmr: "hill island", for the rocky loop of the Wear.',
+'Boston':'Boston is "Botolph\'s stone", after the 7th-century saint, not -ton.','Pontefract':'Pontefract is Latin pons fractus, "broken bridge".',
+'Telford':'Telford is a new town named in 1968 after the engineer Thomas Telford.','Baldock':'Baldock was probably named by the Knights Templar after Baghdad (Old French Baldac).',
+'Bristol':'Bristol comes from Old English Brycgstōw, "the place at the bridge".','Ely':'Ely is "eel district": Old English ēl, eel, a reminder of its fenland fisheries.',
+'Oldham':'Oldham is probably "old promontory", from Old English ald and Old Norse holmr.','Lytham':'Lytham is Old English hlithum, "at the slopes", from its sand dunes.',
+'Paisley':'Paisley probably comes from Latin basilica, a church, via Brittonic.','Kirkintilloch':'Kirkintilloch is Brittonic caer, a fort, not kirk: the fort at the head of the hillock, on the Antonine Wall.',
+'High Wycombe':'Wycombe is probably Old English wīcum, "at the dwellings", rather than -combe, a valley.','Newry':'Newry comes from Irish An tIúr, "the yew tree".'}
+SKIP={'Hamilton','Royston','Stirling','Kirkcaldy','Dunstable','Kingston upon Hull','Hull'}
+def meaning(nm):
+    if nm in SPECIAL: return SPECIAL[nm]
+    if nm in SKIP: return None
+    w=re.sub(r'[^a-z ]','',nm.lower()).split()
+    first,last=(w[0],w[-1]) if w else ('','')
+    for p,m in PRE:
+        if first.startswith(p) and len(first)>len(p): return m
+    for sfx,m in SUF:
+        if last.endswith(sfx) and len(last)>len(sfx)+1: return m
+    return None
+
+ans=[]
+for t in towns:
+    if t['kind']=='Town' or not t['pop'] or t['pop']<15000: continue
+    if t['n'] in ('City of London','City of Westminster','London'): continue
+    c=lad(t['lon'],t['lat'])
+    if not c or c not in places or c.startswith('E09'): continue
+    if cnt[t['n']]>1 and any(o is not t and o['n']==t['n'] and (o['pop'] or 0)>=(t['pop'] or 0)*0.5 for o in towns): continue
+    if nat_of(t) in 'EW' and not t.get('bua'): continue
+    name,nat,label=places[c]
+    cl=[]
+    size='city' if t['n'] in CITIES else 'town'
+    p=t['pop']; pr=int(float('%.2g'%p))
+    cl.append(f"A {size} of about {pr:,} people in {dict(E='England',W='Wales',S='Scotland',N='Northern Ireland')[nat]}.")
+    cl.append(f"It gets about {t['sun']:,.0f} hours of sunshine and {t['rain']:,.0f} mm of rain a year: sunnier than {pct(sunr,t['sun'])}% of UK towns.")
+    bits=[]
+    hp=cats['house']['v'].get(c); lv=cats['leave']['v'].get(c); pay=cats['pay']['v'].get(c)
+    if hp: bits.append(f"the median house costs £{hp:,.0f}")
+    elif pay: bits.append(f"median full-time pay is £{pay:,.0f}")
+    if lv: bits.append(f"{lv:.0f}% voted Leave in 2016")
+    cl.append("In its council area "+" and ".join(bits)+"." if bits else "Its council area is one of the UK's 359.")
+    q=quirk(c)
+    if q:
+        _,k,r,n,v,side=q; cc=cats[k]
+        lab=cc['label'].replace('Life expectancy (women)','life expectancy for women').replace('Life expectancy (men)','life expectancy for men') if cc['label'].startswith('Life') else cc['label'] if cc['label'].split()[0] in ('Queen',"Queen's",'Pagans,','English,','Irish') else cc['label'][0].lower()+cc['label'][1:]
+        val=fmt(cc,v)+('' if cc['fmt'] in ('pct','gbp') else ' '+cc['unit'])
+        if side=='hi' and cc['group']=='Just for fun': cl.append(f"Fun fact: its council area ranks {ordn(r)} of {n} for {lab} ({val}).")
+        elif side=='hi': cl.append(f"Fun fact: its council area has the {'' if r==1 else ordn(r)+' '}highest {lab} of {n} councils ({val}).".replace('the  ','the '))
+        else: cl.append(f"Fun fact: its council area has the {'' if r==1 else ordn(r)+' '}lowest {lab} of {n} councils ({val}).".replace('the  ','the '))
+    else:
+        a=cats['medage']['v'].get(c) or cats['pop']['v'].get(c)
+        cl.append(f"Fun fact: July afternoons there average {t['jul']:.1f} °C, warmer than {pct(julr,t['jul'])}% of UK towns.")
+    if ' · ' in label: cl.append(f"It's in {label.split(' · ')[0]}, {label.split(' · ')[1]}.")
+    elif label=='London': cl.append("It's in London.")
+    elif nat=='E': cl.append(f"Its council is {name}, in {label}.")
+    else: cl.append(f"Its council is {name}, in {label}.")
+    nm=t['n']; L=len(re.sub(r'[^A-Za-z]','',nm))
+    cl.append(f"It starts with {nm[0]} and has {L} letters"+(" (not counting spaces and hyphens)." if re.search(r'[^A-Za-z]',nm) else "."))
+    ans.append(dict(d=1 if (nm in CITIES or p>=40000) else 0,m=meaning(nm),n=nm,lat=round(t['lat'],4),lon=round(t['lon'],4),c=c,area=label,council=name,clues=cl,pop=pr))
+print('answers',len(ans))
+areas={}
+for c,(name,nat,label) in places.items():
+    if ' · ' in label: areas[c]=label.split(' · ')[0]
+    elif label=='London': areas[c]='London'
+    elif nat=='E': areas[c]=name
+    else: areas[c]=name+', '+label
+json.dump(dict(answers=ans,guess=G,areas=areas),open('towns.json','w'),ensure_ascii=False,separators=(',',':'))
+for a in ans[:3]+[x for x in ans if x['n'] in ('Rossendale','Clitheroe','Barrow-in-Furness','Elgin','Truro','Bangor')]: print(a['n'],a['area'],a['clues'])
