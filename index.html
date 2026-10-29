@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ukaydle: guess the mystery UK town</title>
+<title>Whereabouts: guess the mystery UK town</title>
 <meta name="description" content="A daily map game: guess the mystery UK town in six goes. Every wrong guess tells you how far away you are and unlocks a clue, from sunshine and house prices to Druids and distilleries.">
-<meta property="og:title" content="Ukaydle: guess the mystery UK town">
+<meta property="og:title" content="Whereabouts: guess the mystery UK town">
 <meta property="og:description" content="A daily map game. Six guesses, hot and cold clues, and a fact about every town.">
-<meta property="og:image" content="https://maps.tristanhotham.com/ukaydle/header.png">
-<meta property="og:url" content="https://maps.tristanhotham.com/ukaydle/">
+<meta property="og:image" content="https://maps.tristanhotham.com/whereabouts/header.png">
+<meta property="og:url" content="https://maps.tristanhotham.com/whereabouts/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23141313'/%3E%3Ccircle cx='16' cy='13' r='7' fill='%23E0473C'/%3E%3Cpath d='M16 30l-6-12h12z' fill='%23E0473C'/%3E%3Ccircle cx='16' cy='13' r='3' fill='%23141313'/%3E%3C/svg%3E">
@@ -115,7 +115,7 @@ section.about h2{font:800 28px/1.15 var(--display);margin:0 0 8px}
 <body>
 <main class="wrap">
   <div class="kick"><b>Daily game</b><span>Guess the mystery town</span></div>
-  <h1><span class="u">Uk</span><span class="k">aydle</span></h1>
+  <h1><span class="u">Where</span><span class="k">abouts</span></h1>
   <p class="lede">Somewhere in the UK is today's mystery town. You have six guesses. Each one tells you how far off you are and which way to go, and unlocks a clue.</p>
 
   <div class="tabs" role="group" aria-label="Game mode">
@@ -151,14 +151,14 @@ section.about h2{font:800 28px/1.15 var(--display);margin:0 0 8px}
     <p>The clues use the same data as <a href="https://maps.tristanhotham.com/higher-or-lower/">Higher or Lower</a>: ONS and Nomis statistics, Met Office climate averages for 1991 to 2020, Electoral Commission results and counts from my own studies. Name meanings are the usual explanations of common place-name elements, and many names have more than one theory.</p>
   </section>
 
-  <p class="byline">Dr Tristan Hotham, Independent researcher · 2026 · Data: ONS (built-up areas, census, house prices, pay), Nomis, Met Office HadUK-Grid, Electoral Commission, OS Open Names and GeoNames; council boundaries ONS. Contains public sector information licensed under the Open Government Licence v3.0. <a href="https://github.com/Tristan-Hotham/ukaydle">Data and code</a></p>
+  <p class="byline">Dr Tristan Hotham, Independent researcher · 2026 · Data: ONS (built-up areas, census, house prices, pay), Nomis, Met Office HadUK-Grid, Electoral Commission, OS Open Names and GeoNames; council boundaries ONS. Contains public sector information licensed under the Open Government Licence v3.0. <a href="https://github.com/Tristan-Hotham/whereabouts">Data and code</a></p>
 </main>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
 (function(){
 "use strict";
-var LAUNCH=Date.UTC(2026,9,29), MAXG=6, URL_SHORT="maps.tristanhotham.com/ukaydle";
+var LAUNCH=Date.UTC(2026,9,29), MAXG=6, URL_SHORT="maps.tristanhotham.com/whereabouts";
 var T=null,M=null,G=[],A=[],AD=[],mode="daily",st=null,sel=-1,matches=[];
 var $=function(id){return document.getElementById(id)};
 var store={get:function(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
@@ -257,7 +257,7 @@ function endCard(){
 }
 function toast(t){var e=$("toast");e.textContent=t;e.classList.add("on");setTimeout(function(){e.classList.remove("on")},1800)}
 function share(){
-  var t=(st.practice?"Ukaydle practice":"Ukaydle #"+st.no)+" "+(st.won?st.g.length:"X")+"/6\n"+grid()+"\n"+URL_SHORT;
+  var t=(st.practice?"Whereabouts practice":"Whereabouts #"+st.no)+" "+(st.won?st.g.length:"X")+"/6\n"+grid()+"\n"+URL_SHORT;
   if(navigator.share&&/Mobi|Android|iPhone|iPad/.test(navigator.userAgent)){navigator.share({text:t}).catch(function(){});return}
   if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast("Copied: paste it anywhere")},function(){prompt("Copy this:",t)});else prompt("Copy this:",t);
 }

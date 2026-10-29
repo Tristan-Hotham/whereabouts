@@ -1,8 +1,8 @@
-# Ukaydle
+# Whereabouts
 
-A daily map game: guess the mystery UK town in six goes. **[Play it](https://maps.tristanhotham.com/ukaydle/)**
+A daily map game: guess the mystery UK town in six goes. **[Play it](https://maps.tristanhotham.com/whereabouts/)**
 
-![Ukaydle](header.png)
+![Whereabouts](header.png)
 
 ## How it works
 
