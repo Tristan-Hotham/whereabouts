@@ -1,0 +1,203 @@
+# Counties for Whereabouts. England: ceremonial counties; Wales, Scotland, NI: council areas.
+import json,math,re,sys
+from collections import defaultdict
+from shapely.ops import unary_union
+from shapely.geometry import shape
+H=json.load(open('data/data.json')); places=H['places']; cats={c['id']:c for c in H['cats']}
+geo=json.load(open('data/footpaths/data/lad.geojson'))
+G={f['properties']['code']:shape(f['geometry']).buffer(0) for f in geo['features']}
+WM={'Birmingham','Coventry','Dudley','Sandwell','Solihull','Walsall','Wolverhampton'}
+NAT=dict(E='England',W='Wales',S='Scotland',N='Northern Ireland')
+unit={};reg=defaultdict(lambda:defaultdict(float))
+pop=cats['pop']['v']
+for c,(n,nat,l) in places.items():
+    if c not in G: continue
+    if nat=='E':
+        if ' · ' in l: u,r=l.split(' · ')
+        elif l=='London': u,r='Greater London','London'
+        elif n in WM: u,r='West Midlands','West Midlands'
+        else: u,r=n,l
+    else: u,r=n,NAT[nat]
+    unit[c]=u; reg[u][r]+=pop.get(c,1)
+mem=defaultdict(list)
+for c,u in unit.items(): mem[u].append(c)
+print(len(mem),'units')
+shp={u:unary_union([G[c] for c in cs]) for u,cs in mem.items()}
+land=unary_union(list(shp.values()))
+COUNT={'pop','area','sheep','dairy','vr','bells','quakes','ghosts','trees'}
+AREAW={'sun','rain','july','jan','paths'}
+area=cats['area']['v']
+agg={}
+for k,cc in cats.items():
+    v=cc['v'];out={}
+    for u,cs in mem.items():
+        if not all(c in v for c in cs): continue
+        if k in COUNT: out[u]=sum(v[c] for c in cs)
+        else:
+            w=[(area if k in AREAW else pop).get(c,0) for c in cs]
+            if sum(w)==0: continue
+            out[u]=sum(v[c]*x for c,x in zip(cs,w))/sum(w)
+    agg[k]=out
+# order so pop/area exist before density
+agg['density']={u:agg['pop'][u]/agg['area'][u] for u in agg['pop'] if u in agg['area']}
+FUN=[k for k,c in cats.items() if c['group']=='Just for fun' and k not in ('english','irishpass','walk','threecars')]
+SER=[k for k,c in cats.items() if c['group']!='Just for fun' and k not in ('pop','area','density','sun','rain')]
+def rk(k,u):
+    v=agg[k]; ks=sorted(v,key=lambda x:-v[x]); return ks.index(u)+1,len(ks),v[u]
+def quirk(u):
+    def fun(lim):
+        b=None
+        for k in FUN:
+            if u not in agg[k] or agg[k][u]==0 or len(agg[k])<40: continue
+            r,n,val=rk(k,u)
+            if r<=max(1,n*lim) and (b is None or r/n<b[0]): b=(r/n,k,r,n,val,'hi')
+        return b
+    def ser(lim):
+        b=None
+        for k in SER:
+            if u not in agg[k] or len(agg[k])<40: continue
+            r,n,val=rk(k,u)
+            for f,s,rr in ((r/n,'hi',r),((n-r+1)/n,'lo',n-r+1)):
+                if rr<=max(1,n*lim) and (b is None or f<b[0]): b=(f,k,rr,n,val,s)
+        return b
+    return fun(.03) or ser(.03) or fun(.06) or ser(.06) or fun(.1) or ser(.1)
+def fmt(c,x):
+    f=c['fmt']
+    if f=='gbp': return '£{:,.0f}'.format(x)
+    if f=='pct': return '%.1f%%'%x
+    if f=='int': return '{:,.0f}'.format(x)
+    return '%.1f'%x if c['dp']<=1 else '%.2f'%x
+def ordn(n): return str(n)+('th' if 10<=n%100<=20 else {1:'st',2:'nd',3:'rd'}.get(n%10,'th'))
+def lab(cc):
+    l=cc['label']
+    l={'No passport':'people with no passport','No religion':'people with no religion','Very good health':'people in very good health','No central heating':'homes with no central heating','Retired':'retired people','Self-employed':'self-employed people','Area':'area','Happiness':'happiness ratings','Life satisfaction':'life satisfaction ratings'}.get(l,l)
+    if l.startswith('Life'): return l.replace('Life expectancy (women)','life expectancy for women').replace('Life expectancy (men)','life expectancy for men')
+    return l if l.split()[0] in ('Queen',"Queen's",'Pagans,','English,','Irish') else l[0].lower()+l[1:]
+MEAN={
+'Bedfordshire':'The shire of Bedford, which is probably "Beda\'s ford".',
+'Berkshire':'Probably named after a wood called Bearroc, from a Celtic word that may mean "hilly".',
+'Buckinghamshire':'The shire of Buckingham, probably "the river meadow of Bucca\'s people".',
+'Cambridgeshire':'The shire of Cambridge, the bridge over the River Granta (the river was later renamed the Cam to match).',
+'Cheshire':'Short for the shire of Chester, from Old English ceaster, a Roman fort.',
+'County Durham':'Durham is probably Old English dūn plus Old Norse holmr: "hill island", for the rocky loop of the Wear.',
+'Cumbria':'From Cymry, the name the Britons who lived here used for themselves, the same word as Welsh Cymru.',
+'Derbyshire':'The shire of Derby, Old Norse for "deer farm".',
+'Devon':'From the Dumnonii, the Iron Age tribe who lived in the south-west.',
+'Dorset':'"The settlers around Dorchester": Old English sǣte, settlers, with the old name of the county town.',
+'East Riding of Yorkshire':'A riding is Old Norse for a third part: Yorkshire was split into three ridings.',
+'Essex':'"The East Saxons", one of the early English kingdoms.',
+'Gloucestershire':'The shire of Gloucester, the Roman town of Glevum plus Old English ceaster, a Roman fort.',
+'Greater London':'London comes from the Roman Londinium, a name older than the Romans whose meaning is still argued over.',
+'Greater Manchester':'Manchester is the Roman fort of Mamucium, probably "breast-shaped hill", plus Old English ceaster.',
+'Hampshire':'The shire of Hamtun, the old name for Southampton: "home farm".',
+'Herefordshire':'The shire of Hereford, "army ford": a river crossing wide enough for an army.',
+'Hertfordshire':'The shire of Hertford, "the ford of the harts" (stags).',
+'Isle of Wight':'From the Roman name Vectis, whose meaning is uncertain.',
+'Kent':'One of the oldest recorded names in Britain: the Romans called it Cantium, perhaps "border land" or "corner land".',
+'Lancashire':'The shire of Lancaster, the Roman fort (ceaster) on the River Lune.',
+'Leicestershire':'The shire of Leicester, a Roman fort (ceaster) named after a local tribe or river.',
+'Lincolnshire':'The shire of Lincoln, from Lindum Colonia: Brittonic lindo, "pool", plus Latin colonia.',
+'Merseyside':'The Mersey is Old English for "boundary river": it once divided Mercia from Northumbria.',
+'Norfolk':'"The north folk" of the East Angles.',
+'North Yorkshire':'York comes from the Roman Eboracum, probably "the place of yew trees".',
+'South Yorkshire':'York comes from the Roman Eboracum, probably "the place of yew trees".',
+'West Yorkshire':'York comes from the Roman Eboracum, probably "the place of yew trees".',
+'Northamptonshire':'The shire of Northampton, "the northern home farm".',
+'Northumberland':'"The land north of the Humber": the old kingdom of Northumbria once reached from the Humber to the Forth.',
+'Nottinghamshire':'Nottingham was Snotingaham, "the home of Snot\'s people". The Normans dropped the S.',
+'Oxfordshire':'The shire of Oxford, "the ford used by oxen".',
+'Rutland':'"Rōta\'s land". It is England\'s smallest historic county.',
+'Shropshire':'From Scrobbesbyrig, the old name for Shrewsbury: probably "the fort in the scrubland".',
+'Somerset':'"The settlers around Somerton", whose own name means "summer farm".',
+'Staffordshire':'The shire of Stafford, "the ford by a landing place".',
+'Suffolk':'"The south folk" of the East Angles.',
+'Surrey':'Old English for "the southern district", south of the Thames.',
+'East Sussex':'Sussex is "the South Saxons", one of the early English kingdoms.',
+'West Sussex':'Sussex is "the South Saxons", one of the early English kingdoms.',
+'Tyne and Wear':'Named in 1974 after its two rivers.',
+'Warwickshire':'The shire of Warwick, "the dwellings by the weir".',
+'Wiltshire':'The shire of Wilton, "the farm on the River Wylye".',
+'Worcestershire':'The shire of Worcester, the Roman fort (ceaster) of the Weogora tribe.',
+'Cornwall':'From the Cornovii, "the people of the horn" (the peninsula), plus Old English walh, the word that also gave us Welsh.',
+'Bristol':'Old English brycg stōw: "the meeting place by the bridge".',
+'Herefordshire':'The shire of Hereford, "army ford": a river crossing wide enough for an army.',
+'Ceredigion':'"The land of Ceredig", a fifth-century prince.',
+'Powys':'Probably from Latin pagenses, "the people of the countryside".',
+'Pembrokeshire':'Pembroke is Penfro, Welsh for "land\'s end".',
+'Carmarthenshire':'Carmarthen is Caerfyrddin, the fort of the Roman town of Moridunum, "sea fort".',
+'Monmouthshire':'Monmouth is the mouth of the River Monnow.',
+'Isle of Anglesey':'Probably Old Norse "Ǫngull\'s island". In Welsh it is Ynys Môn.',
+'Cardiff':'Caerdydd: the fort on the River Taff.',
+'Swansea':'Probably Old Norse "Sveinn\'s island". The Welsh name, Abertawe, means the mouth of the Tawe.',
+'Denbighshire':'Denbigh is Dinbych, "little fortress".',
+'Merthyr Tydfil':'"The martyrium of Tudful", a saint said to have been killed here.',
+'Vale of Glamorgan':'Glamorgan is Morgannwg, "the land of Morgan".',
+'Rhondda Cynon Taf':'Named after three rivers: the Rhondda, the Cynon and the Taff.',
+'Newport':'Simply "the new market town". In Welsh it is Casnewydd, "the new castle".',
+'City of Edinburgh':'Edinburgh comes from Din Eidyn, "the fort of Eidyn".',
+'Glasgow City':'Glasgow is probably Brittonic for "green hollow".',
+'Aberdeen City':'Aber- is Brittonic for a river mouth: Aberdeen sits between the mouths of the Dee and the Don.',
+'Inverclyde':'Inver- is Gaelic for a river mouth: this is where the Clyde opens out.',
+'Orkney Islands':'Probably from Old Norse orkn, "seal", so "the seal islands".',
+'Na h-Eileanan Siar':'Gaelic for "the Western Isles".',
+'Argyll and Bute':'Argyll is Gaelic Earra-Ghàidheal, "the coastland of the Gaels".',
+'Dumfries and Galloway':'Galloway is the land of the Gall-Ghàidheil, "the foreign Gaels" of mixed Norse and Gaelic descent.',
+'North Lanarkshire':'Lanark is from Brittonic llanerch, "a glade".',
+'South Lanarkshire':'Lanark is from Brittonic llanerch, "a glade".',
+'Renfrewshire':'Renfrew is probably Brittonic for "the point of the current".',
+'East Renfrewshire':'Renfrew is probably Brittonic for "the point of the current".',
+'West Dunbartonshire':'Dumbarton is Dùn Breatann, "the fort of the Britons".',
+'East Dunbartonshire':'Dumbarton is Dùn Breatann, "the fort of the Britons".',
+'Clackmannanshire':'Clackmannan is "the stone of Manau", an ancient stone still in the town.',
+'Falkirk':'Probably "the speckled church", from Gaelic and Old English.',
+'Belfast':'Béal Feirste: "the mouth of the sandbank ford".',
+'Derry City and Strabane':'Derry is Doire, Irish for "oak grove".',
+'Armagh City, Banbridge and Craigavon':'Armagh is Ard Mhacha, "Macha\'s height".',
+'Lisburn and Castlereagh':'Lisburn\'s Irish name, Lios na gCearrbhach, means "the ring fort of the gamblers".',
+}
+from shapely.geometry import Polygon,MultiPolygon
+closed=land.buffer(0.02).buffer(-0.02)
+polys_=closed.geoms if hasattr(closed,'geoms') else [closed]
+outline=unary_union([Polygon(p.exterior).boundary for p in polys_])
+coast={u:g.buffer(0.01).intersection(outline).length>0.08 for u,g in shp.items()}
+for u in ('Greater London','West Midlands'): coast[u]=False
+nb={u:sorted([o for o in shp if o!=u and shp[o].distance(g)<0.004],key=lambda o:-shp[o].boundary.intersection(g.buffer(0.004)).length) for u,g in shp.items()}
+def THE(r): return 'the '+r if r in ('East Midlands','West Midlands','East of England') else r
+def letters(nm):
+    L=len(re.sub(r'[^A-Za-z]','',nm)); return f"starts with {nm[0]} and has {L} letters"+(" (not counting spaces and punctuation)" if re.search(r'[^A-Za-z]',nm) else "")
+sunv=sorted(agg['sun'].values())
+def pct(a,v): return round(100*sum(1 for x in a if x<v)/len(a))
+def roundp(p): return int(float('%.2g'%p))
+out=[]
+for u,cs in sorted(mem.items()):
+    nat=places[cs[0]][1]; g=shp[u]; ct=g.representative_point() if not g.centroid.within(g) else g.centroid
+    kind='county' if nat=='E' else 'council area'
+    cl=[f"A {kind} of about {roundp(agg['pop'][u]):,} people in {NAT[nat]}, covering {roundp(agg['area'][u]):,} km²."]
+    cl.append(f"It gets about {agg['sun'][u]:,.0f} hours of sunshine and {agg['rain'][u]:,.0f} mm of rain a year: sunnier than {pct(sunv,agg['sun'][u])}% of the places in this mode.")
+    bits=[]
+    if u in agg['house']: bits.append(f"a typical house costs about £{float('%.2g'%agg['house'][u]):,.0f}")
+    elif u in agg['pay']: bits.append(f"typical full-time pay is about £{float('%.2g'%agg['pay'][u]):,.0f}")
+    if u in agg['leave']: bits.append(f"{agg['leave'][u]:.0f}% voted Leave in 2016")
+    if bits: cl.append("Here "+" and ".join(bits)+".")
+    else: cl.append(f"The median age here is {agg['medage'][u]:.0f}." if u in agg['medage'] else f"January afternoons here average {agg['jan'][u]:.1f} °C.")
+    q=quirk(u)
+    if q:
+        _,k,r,n,v,side=q;cc=cats[k];val=fmt(cc,v)+('' if cc['fmt'] in ('pct','gbp') else ' '+cc['unit'])
+        if side=='hi' and cc['group']=='Just for fun': cl.append(f"Fun fact: it ranks {ordn(r)} of {n} for {lab(cc)} ({val}).")
+        else: cl.append(f"Fun fact: it comes {'' if r==1 else ordn(r)+' '}{'highest' if side=='hi' else 'lowest'} of {n} for {lab(cc)} ({val}).".replace('comes  ','comes '))
+    else: cl.append(f"Fun fact: July afternoons average {agg['july'][u]:.1f} °C.")
+    rs=sorted(reg[u].items(),key=lambda x:-x[1]); r0=rs[0][0]
+    where=('It\'s in London' if r0=='London' else f"It's {'mostly ' if len(rs)>1 else ''}in {THE(r0)}") if nat=='E' else f"It's in {r0}"
+    where+="."
+    cl.append(where)
+    n_=nb[u]
+    if not n_: six=f"It has no land border with anywhere else in this game, and it {letters(u)}."
+    elif len(n_)==1: six=f"It borders {n_[0]}, and it {letters(u)}."
+    else:
+        show=n_[:4]; six=f"It borders {', '.join(show[:-1])} and {show[-1]}{' (among others)' if len(n_)>4 else ''}, and it {letters(u)}."
+    cl.append(six)
+    out.append(dict(n=u,d=1,m=MEAN.get(u),lat=round(ct.y,4),lon=round(ct.x,4),mem=cs,nat=nat,area=r0 if nat=='E' else NAT[nat],nb=n_,clues=cl,pop=roundp(agg['pop'][u])))
+json.dump(dict(answers=out),open('./counties.json','w'),ensure_ascii=False,separators=(',',':'))
+print(len(out),'meanings',sum(1 for a in out if a['m']))
+for a in out:
+    if a['n'] in ('Cornwall','Rutland','Greater London','Moray','Orkney Islands','Isle of Anglesey','Belfast','West Midlands'): print(a['n'],a['area'],a['nb'][:5],a['clues'])

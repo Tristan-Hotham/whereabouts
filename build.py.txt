@@ -2,8 +2,8 @@ import csv,json,math,re
 from collections import defaultdict
 from shapely.geometry import shape,Point
 from shapely import STRtree
-P='repos/'
-H=json.load(open('higher-or-lower/data.json'))
+P='data/'
+H=json.load(open('data/data.json'))
 places=H['places']; cats={c['id']:c for c in H['cats']}
 geo=json.load(open(P+'footpaths/data/lad.geojson'))
 polys=[shape(f['geometry']) for f in geo['features']]; codes=[f['properties']['code'] for f in geo['features']]
@@ -136,20 +136,14 @@ def meaning(nm):
         if last.endswith(sfx) and len(last)>len(sfx)+1: return m
     return None
 
-ans=[]
-for t in towns:
-    if t['kind']=='Town' or not t['pop'] or t['pop']<15000: continue
-    if t['n'] in ('City of London','City of Westminster','London'): continue
-    c=lad(t['lon'],t['lat'])
-    if not c or c not in places or c.startswith('E09'): continue
-    if cnt[t['n']]>1 and any(o is not t and o['n']==t['n'] and (o['pop'] or 0)>=(t['pop'] or 0)*0.5 for o in towns): continue
-    if nat_of(t) in 'EW' and not t.get('bua'): continue
+NAT=dict(E='England',W='Wales',S='Scotland',N='Northern Ireland')
+CITYSET=(CITIES-{'City of London','City of Westminster','London'})|{'Belfast','Derry','Lisburn','Newry','Bangor'}
+DIRS=['north','north-east','east','south-east','south','south-west','west','north-west']
+def bearing(a,b,c,d):
+    y=math.sin(math.radians(d-b))*math.cos(math.radians(c));x=math.cos(math.radians(a))*math.sin(math.radians(c))-math.sin(math.radians(a))*math.cos(math.radians(c))*math.cos(math.radians(d-b))
+    return (math.degrees(math.atan2(y,x))+360)%360
+def council_clues(c,cl):
     name,nat,label=places[c]
-    cl=[]
-    size='city' if t['n'] in CITIES else 'town'
-    p=t['pop']; pr=int(float('%.2g'%p))
-    cl.append(f"A {size} of about {pr:,} people in {dict(E='England',W='Wales',S='Scotland',N='Northern Ireland')[nat]}.")
-    cl.append(f"It gets about {t['sun']:,.0f} hours of sunshine and {t['rain']:,.0f} mm of rain a year: sunnier than {pct(sunr,t['sun'])}% of UK towns.")
     bits=[]
     hp=cats['house']['v'].get(c); lv=cats['leave']['v'].get(c); pay=cats['pay']['v'].get(c)
     if hp: bits.append(f"the median house costs £{hp:,.0f}")
@@ -164,22 +158,95 @@ for t in towns:
         if side=='hi' and cc['group']=='Just for fun': cl.append(f"Fun fact: its council area ranks {ordn(r)} of {n} for {lab} ({val}).")
         elif side=='hi': cl.append(f"Fun fact: its council area has the {'' if r==1 else ordn(r)+' '}highest {lab} of {n} councils ({val}).".replace('the  ','the '))
         else: cl.append(f"Fun fact: its council area has the {'' if r==1 else ordn(r)+' '}lowest {lab} of {n} councils ({val}).".replace('the  ','the '))
-    else:
-        a=cats['medage']['v'].get(c) or cats['pop']['v'].get(c)
-        cl.append(f"Fun fact: July afternoons there average {t['jul']:.1f} °C, warmer than {pct(julr,t['jul'])}% of UK towns.")
-    if ' · ' in label: cl.append(f"It's in {label.split(' · ')[0]}, {label.split(' · ')[1]}.")
-    elif label=='London': cl.append("It's in London.")
-    elif nat=='E': cl.append(f"Its council is {name}, in {label}.")
-    else: cl.append(f"Its council is {name}, in {label}.")
-    nm=t['n']; L=len(re.sub(r'[^A-Za-z]','',nm))
-    cl.append(f"It starts with {nm[0]} and has {L} letters"+(" (not counting spaces and hyphens)." if re.search(r'[^A-Za-z]',nm) else "."))
-    ans.append(dict(d=1 if (nm in CITIES or p>=40000) else 0,m=meaning(nm),n=nm,lat=round(t['lat'],4),lon=round(t['lon'],4),c=c,area=label,council=name,clues=cl,pop=pr))
-print('answers',len(ans))
+        return True
+    return False
+def where_clue(c):
+    name,nat,label=places[c]
+    if ' · ' in label: return f"It's in {label.split(' · ')[0]}, {label.split(' · ')[1]}."
+    if label=='London': return "It's in London."
+    return f"Its council is {name}, in {label}."
+def letters(nm):
+    L=len(re.sub(r'[^A-Za-z]','',nm))
+    return f"starts with {nm[0]} and has {L} letters"+(" (not counting spaces and hyphens)" if re.search(r'[^A-Za-z]',nm) else "")
+def make(t,c,kind,sun,rain,jul,sunpool,daily,extra6=None):
+    name,nat,label=places[c]
+    nm=t['n']; p=t['pop']; pr=int(float('%.2g'%p)) if p else None
+    cl=[f"A {kind} of about {pr:,} people in {NAT[nat]}." if pr else f"A {kind} in {NAT[nat]}."]
+    cl.append(f"It gets about {sun:,.0f} hours of sunshine and {rain:,.0f} mm of rain a year: sunnier than {pct(sunpool,sun)}% of UK {kind}s.")
+    if not council_clues(c,cl): cl.append(f"Fun fact: July afternoons there average {jul:.1f} °C, warmer than {pct(julr,jul)}% of UK towns.")
+    cl.append(where_clue(c))
+    cl.append(extra6 or ("It "+letters(nm)+"."))
+    return dict(d=daily,m=meaning(nm),n=nm,lat=round(t['lat'],4),lon=round(t['lon'],4),c=c,area=label,council=name,clues=cl,pop=pr)
+ans=[];cities=[]
+for t in towns:
+    isc=t['n'] in CITYSET
+    if not isc and (t['kind']=='Town' or not t['pop'] or t['pop']<15000): continue
+    if t['n'] in ('City of London','City of Westminster','London'): continue
+    c=lad(t['lon'],t['lat'])
+    if not c or c not in places or c.startswith('E09'): continue
+    if not isc:
+        if cnt[t['n']]>1 and any(o is not t and o['n']==t['n'] and (o['pop'] or 0)>=(t['pop'] or 0)*0.5 for o in towns): continue
+        if nat_of(t) in 'EW' and not t.get('bua'): continue
+    if isc and t['n']=='Bangor' and not t['pop']: pass
+    a=make(t,c,'city' if isc else 'town',t['sun'],t['rain'],t['jul'],sunr,1 if isc else (1 if t['pop']>=40000 else 0))
+    (cities if isc else ans).append(a)
+best={}
+for a in cities:
+    key=a['n']+('|'+a['c'][0] if a['n']=='Bangor' else '')
+    if key not in best or (a['pop'] or 0)>(best[key]['pop'] or 0): best[key]=a
+cities=list(best.values())
+print('towns',len(ans),'cities',len(cities),sorted(x['n'] for x in cities))
 areas={}
 for c,(name,nat,label) in places.items():
     if ' · ' in label: areas[c]=label.split(' · ')[0]
     elif label=='London': areas[c]='London'
     elif nat=='E': areas[c]=name
     else: areas[c]=name+', '+label
-json.dump(dict(answers=ans,guess=G,areas=areas),open('towns.json','w'),ensure_ascii=False,separators=(',',':'))
+json.dump(dict(answers=ans,cities=cities,guess=G,areas=areas),open('./towns.json','w'),ensure_ascii=False,separators=(',',':'))
 for a in ans[:3]+[x for x in ans if x['n'] in ('Rossendale','Clitheroe','Barrow-in-Furness','Elgin','Truro','Bangor')]: print(a['n'],a['area'],a['clues'])
+
+# ================= villages (England and Wales) =================
+from pyproj import Transformer as _T
+_to=_T.from_crs(4326,27700,always_xy=True)
+CELL={}
+for r in csv.DictReader(open(P+'sun-and-rain-uk/data/cells_5km.csv')):
+    CELL[(float(r['e_km']),float(r['n_km']))]=(float(r['sun_1991_2020']),float(r['rain_1991_2020']),float(r['tmax_Jul']))
+CK=list(CELL)
+def weather(lat,lon):
+    e,n=_to.transform(lon,lat); e/=1000;n/=1000
+    k=(math.floor(e/5)*5+2.5,math.floor(n/5)*5+2.5)
+    if k in CELL: return CELL[k]
+    k=min(CK,key=lambda q:(q[0]-e)**2+(q[1]-n)**2); return CELL[k]
+TOWNREF=[t for t in towns if (t['pop'] or 0)>=10000 or t['n'] in CITYSET]
+vill=[];vsun=[]
+for b in bua:
+    p=float(b['pop2021'] or 0)
+    if not (1000<=p<5000) or b['nation'] not in ('England','Wales'): continue
+    la,lo=float(b['LAT']),float(b['LONG']); c=lad(lo,la)
+    if not c or c not in places or c.startswith('E09'): continue
+    nm=re.sub(r'\s*\(.*\)$','',b['BUA22NM']).strip()
+    sun,rain,jul=weather(la,lo); vsun.append(sun)
+    vill.append((nm,la,lo,p,c,sun,rain,jul))
+vsun.sort()
+VA=[]
+for nm,la,lo,p,c,sun,rain,jul in vill:
+    near=min((t for t in TOWNREF if t['n']!=nm),key=lambda t:km(la,lo,t['lat'],t['lon']))
+    d=km(near['lat'],near['lon'],la,lo); br=bearing(near['lat'],near['lon'],la,lo)
+    e6=f"It's about {d:.0f} km {DIRS[round(br/45)%8]} of {near['n']}, and it {letters(nm)}."
+    t=dict(n=nm,lat=la,lon=lo,pop=p)
+    a=make(t,c,'village',sun,rain,jul,vsun,1 if p>=2000 else 0,e6)
+    a['clues'][0]=a['clues'][0].replace('A village of about','A village of about')
+    VA.append(a)
+# village guess list: every built-up area plus the towns
+GV=[];seen=defaultdict(list)
+for g in G:
+    GV.append(g); seen[g[0]].append((g[1],g[2]))
+for b in bua:
+    nm=re.sub(r'\s*\(.*\)$','',b['BUA22NM']).strip(); la,lo=float(b['LAT']),float(b['LONG'])
+    if any(km(la,lo,x,y)<3 for x,y in seen[nm]): continue
+    c=lad(lo,la)
+    if not c or c not in places: continue
+    GV.append([nm,round(la,4),round(lo,4),c]); seen[nm].append((la,lo))
+print('villages',len(VA),sum(a['d'] for a in VA),'village guesses',len(GV))
+json.dump(dict(answers=VA,guess=GV),open('./villages.json','w'),ensure_ascii=False,separators=(',',':'))
+for a in VA[:2]+[x for x in VA if x['n'] in ('Barrow','Whalley','Grindleford')][:3]: print(a['n'],a['area'],a['clues'],a['m'])

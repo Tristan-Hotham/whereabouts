@@ -41,6 +41,11 @@ h1 .u{color:var(--red)}h1 .k{color:var(--blue)}
 .tabs button{font:600 13px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;background:transparent;color:var(--fg);border:0;padding:12px 16px;cursor:pointer}
 .tabs button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
 .tabs button:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.modes{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-start}
+.modes .tabs{margin-bottom:10px}
+.tabs.type button{padding:12px 13px}
+.tnote{font:500 12px/1.4 var(--mono);color:var(--muted);margin:0 0 14px;min-height:1.4em}
+#cg path{stroke:var(--card);stroke-width:1;fill-opacity:.55}
 .game{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;border-top:3px solid var(--line);padding-top:16px}
 .bar{display:flex;justify-content:space-between;gap:10px;font:500 13px/1.3 var(--mono);margin-bottom:10px}
 .clues{list-style:none;margin:0 0 16px;padding:0;counter-reset:c}
@@ -114,14 +119,23 @@ section.about h2{font:800 28px/1.15 var(--display);margin:0 0 8px}
 </head>
 <body>
 <main class="wrap">
-  <div class="kick"><b>Daily game</b><span>Guess the mystery town</span></div>
+  <div class="kick"><b>Daily game</b><span id="kick2">Guess the mystery town</span></div>
   <h1><span class="u">Where</span><span class="k">abouts</span></h1>
-  <p class="lede">Somewhere in the UK is today's mystery town. You have six guesses. Each one tells you how far off you are and which way to go, and unlocks a clue.</p>
+  <p class="lede">Somewhere in the UK is today's mystery <span id="ledeT">town</span>. You have six guesses. Each one tells you how far off you are and which way to go, and unlocks a clue.</p>
 
-  <div class="tabs" role="group" aria-label="Game mode">
-    <button type="button" id="tDaily" aria-pressed="true">Today's town</button>
-    <button type="button" id="tPrac" aria-pressed="false">Practice</button>
+  <div class="modes">
+    <div class="tabs type" role="group" aria-label="What to find">
+      <button type="button" data-t="town" aria-pressed="true">Town</button>
+      <button type="button" data-t="city" aria-pressed="false">City</button>
+      <button type="button" data-t="village" aria-pressed="false">Village</button>
+      <button type="button" data-t="county" aria-pressed="false">County</button>
+    </div>
+    <div class="tabs" role="group" aria-label="Game mode">
+      <button type="button" id="tDaily" aria-pressed="true">Today's town</button>
+      <button type="button" id="tPrac" aria-pressed="false">Practice</button>
+    </div>
   </div>
+  <p class="tnote" id="tnote"></p>
 
   <div class="game">
     <div>
@@ -140,14 +154,15 @@ section.about h2{font:800 28px/1.15 var(--display);margin:0 0 8px}
       <ol class="guesses" id="guesses"></ol>
     </div>
     <div class="mapbox">
-      <svg id="map" viewBox="0 0 600 1131" role="img" aria-label="Map of the UK showing your guesses"><path id="base"/><path id="ans"/><g id="lines"></g><g id="dots"></g></svg>
+      <svg id="map" viewBox="0 0 600 1131" role="img" aria-label="Map of the UK showing your guesses"><path id="base"/><g id="cg"></g><path id="ans"/><g id="lines"></g><g id="dots"></g></svg>
       <div class="legend" aria-hidden="true"><span><i style="background:var(--p3)"></i>under 50 km</span><span><i style="background:var(--p2)"></i>50–150</span><span><i style="background:var(--p1)"></i>150–300</span><span><i style="background:var(--p0)"></i>300+</span></div>
     </div>
   </div>
 
   <section class="about" aria-labelledby="ab">
     <h2 id="ab">How it works</h2>
-    <p>Each day's town is one of about 240 of the UK's cities and larger towns. Practice draws from about 560 towns of 15,000 people or more; London's boroughs are left out of both. You can guess any of about 3,000 towns. After each guess you see the straight-line distance, the direction to the mystery town and how close you are, from 0% at 1,000 km to 100%. Every wrong guess unlocks the next clue: size, sunshine and rain, house prices and the Leave vote in its council area, the oddest thing about its council area, its county, and finally its first letter. Everyone gets the same town each day; Practice gives you a random one whenever you like.</p>
+    <p>Pick what to find. <b>Town</b>: each day's town is one of about 240 of the UK's cities and larger towns, and practice draws from about 560 towns of 15,000 people or more. <b>City</b>: the UK's 73 cities. <b>Village</b>: about 1,200 daily villages of 2,000 to 5,000 people and 2,500 for practice, in England and Wales (the built-up area data I used doesn't cover Scotland and Northern Ireland). <b>County</b>: England's 47 ceremonial counties plus the council areas of Wales, Scotland and Northern Ireland, 112 in all; the clues add up the figures for each county's councils. Each mode has its own daily answer, streak and stats, and the daily list reshuffles each time it runs out. London's boroughs are left out as answers.</p>
+    <p>After each guess you see the straight-line distance, the direction to the answer and how close you are, from 0% at 1,000 km to 100%. Every wrong guess unlocks the next clue. At the end the answer appears on the map, often with what its name means.</p>
     <p>The clues use the same data as <a href="https://maps.tristanhotham.com/higher-or-lower/">Higher or Lower</a>: ONS and Nomis statistics, Met Office climate averages for 1991 to 2020, Electoral Commission results and counts from my own studies. Name meanings are the usual explanations of common place-name elements, and many names have more than one theory.</p>
   </section>
 
@@ -159,7 +174,12 @@ section.about h2{font:800 28px/1.15 var(--display);margin:0 0 8px}
 (function(){
 "use strict";
 var LAUNCH=Date.UTC(2026,9,29), MAXG=6, URL_SHORT="maps.tristanhotham.com/whereabouts";
-var T=null,M=null,G=[],A=[],AD=[],mode="daily",st=null,sel=-1,matches=[];
+var T=null,M=null,G=[],A=[],AD=[],mode="daily",st=null,sel=-1,matches=[],TYPE="town",DATA={},ORDS={};
+var TY={town:{one:"town",seed:20261029,note:"About 560 UK towns and cities of 15,000+ people. You can guess any of about 3,000 towns."},
+city:{one:"city",seed:20261101,note:"The UK's 73 cities, from London-sized to St Davids. Guess any town or city."},
+village:{one:"village",seed:20261102,note:"About 2,500 villages and small towns of 1,000 to 5,000 people, England and Wales only. Guess any of about 7,700 places."},
+county:{one:"county",seed:20261103,note:"112 areas: England's ceremonial counties, and the council areas of Wales, Scotland and Northern Ireland."}};
+function skey(k){return TYPE==="town"?"uk-"+k:"uk-"+TYPE+"-"+k}
 var $=function(id){return document.getElementById(id)};
 var store={get:function(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 function rng(seed){var a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
@@ -174,10 +194,11 @@ function arrow(deg){return ARROWS[Math.round(deg/45)%8]}
 function band(k){return k<50?3:k<150?2:k<300?1:0}
 var SQ=["🟥","🟧","🟨","🟩"];
 function xy(lat,lon){var p=M.proj;return[(lon*p.K-p.minx)*p.S,(-lat-p.miny)*p.S]}
-function area(code){return T.areas[code]||""}
+function area(code){return TYPE==="county"?(CA[code]||""):(T.areas[code]||"")}
+var CA={};
 
 function quip(k,g,a,n){
-  var sameNat=g[3][0]===a.c[0],sameC=g[3]===a.c;
+  var sameNat=(g.nat||g[3][0])===(a.nat||a.c[0]),sameC=TYPE!=="county"&&g[3]===a.c;
   var r=function(arr){return arr[Math.floor(Math.random()*arr.length)]};
   if(sameC)return "Same council area! You could walk it.";
   var s=k<15?"Practically next door.":k<40?r(["Very warm. You can almost smell the chippy.","Very warm. Same bus route, nearly."]):k<80?"Warm. Right part of the country.":k<150?r(["Getting there.","Lukewarm. Keep going."]):k<300?"Chilly.":k<500?"Cold. Wrong end of the country.":r(["Freezing. Pack a coat.","Arctic. Are you sure you're in the UK?"]);
@@ -186,15 +207,16 @@ function quip(k,g,a,n){
 }
 function setMode(m){
   mode=m;$("tDaily").setAttribute("aria-pressed",m==="daily");$("tPrac").setAttribute("aria-pressed",m==="practice");
+  $("tDaily").textContent="Today's "+TY[TYPE].one;
   if(m==="daily")startDaily();else startPractice();
 }
-function order(){var r=rng(20261029),idx=AD.map(function(_,i){return i});for(var i=idx.length-1;i>0;i--){var j=Math.floor(r()*(i+1));var t=idx[i];idx[i]=idx[j];idx[j]=t}return idx}
-var ORD=null;
+function order(cy){var r=rng(TY[TYPE].seed+cy*7919),idx=AD.map(function(_,i){return i});for(var i=idx.length-1;i>0;i--){var j=Math.floor(r()*(i+1));var t=idx[i];idx[i]=idx[j];idx[j]=t}return idx}
 function startDaily(){
-  var key=today(),n=dayNo(key);if(!ORD)ORD=order();
-  var a=AD[ORD[((n-1)%AD.length+AD.length)%AD.length]];
+  var key=today(),n=dayNo(key),L=AD.length,i=((n-1)%L+L)%L,cy=Math.floor((n-1)/L),ok=TYPE+cy;
+  if(!ORDS[ok])ORDS[ok]=order(cy);
+  var a=AD[ORDS[ok][i]];
   st={key:key,no:n,a:a,g:[],done:false,won:false};
-  var saved=store.get("uk-d-"+key);
+  var saved=store.get(skey("d-"+key));
   if(saved&&saved.g){saved.g.forEach(function(i){apply(G[i],true)})}
   render();
 }
@@ -203,16 +225,16 @@ function startPractice(){
   st={key:null,no:null,a:a,g:[],done:false,won:false,practice:true};render();setTimeout(function(){$("q").focus()},50);
 }
 function apply(g,silent){
-  var a=st.a,k=km(g[1],g[2],a.lat,a.lon),win=g[0]===a.n&&k<3;
+  var a=st.a,k=km(g[1],g[2],a.lat,a.lon),win=g[0]===a.n&&(TYPE==="county"||k<3);
   st.g.push({g:g,k:k,b:bearing(g[1],g[2],a.lat,a.lon),win:win,q:win?"":quip(k,g,a)});
   if(win){st.done=true;st.won=true}else if(st.g.length>=MAXG){st.done=true}
-  if(!silent&&st.key){store.set("uk-d-"+st.key,{g:st.g.map(function(x){return G.indexOf(x.g)})});if(st.done)stats()}
+  if(!silent&&st.key){store.set(skey("d-"+st.key),{g:st.g.map(function(x){return G.indexOf(x.g)})});if(st.done)stats()}
 }
 function stats(){
-  var s=store.get("uk-stats")||{played:0,wins:0,streak:0,best:0,dist:[0,0,0,0,0,0],last:null};
+  var s=store.get(skey("stats"))||{played:0,wins:0,streak:0,best:0,dist:[0,0,0,0,0,0],last:null};
   if(s.last===st.key)return;
   s.played++;if(st.won){s.wins++;s.dist[st.g.length-1]++;s.streak=(s.last&&dayNo(st.key)-dayNo(s.last)===1&&s.lastWon?s.streak:0)+1;s.best=Math.max(s.best,s.streak)}else s.streak=0;
-  s.last=st.key;s.lastWon=st.won;store.set("uk-stats",s);
+  s.last=st.key;s.lastWon=st.won;store.set(skey("stats"),s);
 }
 function render(){
   var a=st.a,n=st.g.length,open=st.done?6:Math.min(6,n+1);
@@ -230,34 +252,39 @@ function render(){
 function drawMap(){
   if(!M)return;var a=st.a,dots="",lines="";
   st.g.forEach(function(x,i){var p=xy(x.g[1],x.g[2]),col=x.win?"var(--p3)":"var(--p"+band(x.k)+")";dots+='<g class="dot"><circle cx="'+p[0]+'" cy="'+p[1]+'" r="17" fill="'+col+'" stroke="var(--card)" stroke-width="3"/><text x="'+p[0]+'" y="'+p[1]+'">'+(i+1)+'</text></g>'});
+  var cg="";
+  if(TYPE==="county")st.g.forEach(function(x){if(!x.win)cg+='<path d="'+shape(x.g[4])+'" fill="var(--p'+band(x.k)+')"/>'});
+  $("cg").innerHTML=cg;
   if(st.done){
-    $("ans").setAttribute("d",M.p[a.c]||"");
+    $("ans").setAttribute("d",TYPE==="county"?shape(a.mem):(M.p[a.c]||""));
     var q=xy(a.lat,a.lon);
     st.g.forEach(function(x){if(x.win)return;var p=xy(x.g[1],x.g[2]);lines+='<line x1="'+p[0]+'" y1="'+p[1]+'" x2="'+q[0]+'" y2="'+q[1]+'" stroke="var(--muted)" stroke-width="2.5" stroke-dasharray="7 6"/>'});
     dots+='<g><circle cx="'+q[0]+'" cy="'+q[1]+'" r="22" fill="var(--fg)"/><text x="'+q[0]+'" y="'+(q[1]+1)+'" style="font:900 26px var(--display);fill:var(--bg);text-anchor:middle;dominant-baseline:central">★</text></g>';
   }else $("ans").setAttribute("d","");
   $("dots").innerHTML=dots;$("lines").innerHTML=lines;
 }
+function shape(mem){return mem.map(function(c){return M.p[c]||""}).join("")}
 function grid(){return st.g.map(function(x){return x.win?"🎯":SQ[band(x.k)]+arrow(x.b)}).join("\n")}
 function untilMidnight(){var n=new Date(),m=new Date(n);m.setHours(24,0,0,0);var s=Math.round((m-n)/1000);return Math.floor(s/3600)+"h "+Math.floor(s%3600/60)+"m"}
 function endCard(){
   var a=st.a,n=st.g.length,best=st.g.reduce(function(m,x){return Math.min(m,x.k)},1e9);
   var head=st.won?(n===1?"First guess! Unbelievable.":n<=3?"Got it in "+n+". Very good.":"Got it in "+n+"."):"So close. It was "+a.n+".";
-  var t=(st.won?"":"")+'<div class="small">'+(st.practice?"Practice":"Day "+st.no)+'</div><h2>'+esc(head)+'</h2><div class="where">'+esc(a.n)+' · '+esc(area(a.c))+' · about '+a.pop.toLocaleString("en-GB")+' people</div>';
+  var wh=TYPE==="county"?a.area:area(a.c);
+  var t=(st.won?"":"")+'<div class="small">'+(st.practice?"Practice":"Day "+st.no)+'</div><h2>'+esc(head)+'</h2><div class="where">'+esc(a.n)+' · '+esc(wh)+' · about '+a.pop.toLocaleString("en-GB")+' people</div>';
   if(a.m)t+='<div class="mean"><b>What the name means.</b> '+esc(a.m)+'</div>';
   if(!st.won)t+='<p class="small">Your closest guess was '+Math.round(best).toLocaleString("en-GB")+' km away.</p>';
   t+='<div class="grid" aria-label="Your guesses as coloured squares and arrows">'+grid()+'</div>';
-  t+='<div class="btns"><button type="button" class="go big" id="share">Share</button><button type="button" class="go ghost big" id="again">'+(st.practice?"Another town":"Practice")+'</button><a class="go ghost big" style="text-decoration:none;display:inline-flex;align-items:center" href="https://maps.tristanhotham.com/higher-or-lower/">Play Higher or Lower</a></div>';
+  t+='<div class="btns"><button type="button" class="go big" id="share">Share</button><button type="button" class="go ghost big" id="again">'+(st.practice?"Another "+TY[TYPE].one:"Practice")+'</button><a class="go ghost big" style="text-decoration:none;display:inline-flex;align-items:center" href="https://maps.tristanhotham.com/higher-or-lower/">Play Higher or Lower</a></div>';
   if(!st.practice){
-    var s=store.get("uk-stats")||{played:0,wins:0,streak:0,best:0,dist:[0,0,0,0,0,0]},mx=Math.max.apply(null,s.dist.concat([1]));
-    t+='<p class="small">A new town in '+untilMidnight()+'.</p><div class="stats"><div><b>'+s.played+'</b>played</div><div><b>'+(s.played?Math.round(100*s.wins/s.played):0)+'%</b>won</div><div><b>'+s.streak+'</b>streak</div><div><b>'+s.best+'</b>best</div></div><div class="dist">'+s.dist.map(function(v,i){return '<div class="'+(st.won&&i===n-1?"me":"")+'">'+(i+1)+' <span style="width:'+Math.max(8,Math.round(100*v/mx))+'%">'+v+'</span></div>'}).join("")+'</div>';
+    var s=store.get(skey("stats"))||{played:0,wins:0,streak:0,best:0,dist:[0,0,0,0,0,0]},mx=Math.max.apply(null,s.dist.concat([1]));
+    t+='<p class="small">A new '+TY[TYPE].one+' in '+untilMidnight()+'.</p><div class="stats"><div><b>'+s.played+'</b>played</div><div><b>'+(s.played?Math.round(100*s.wins/s.played):0)+'%</b>won</div><div><b>'+s.streak+'</b>streak</div><div><b>'+s.best+'</b>best</div></div><div class="dist">'+s.dist.map(function(v,i){return '<div class="'+(st.won&&i===n-1?"me":"")+'">'+(i+1)+' <span style="width:'+Math.max(8,Math.round(100*v/mx))+'%">'+v+'</span></div>'}).join("")+'</div>';
   }
   $("end").innerHTML='<div class="end">'+t+'</div>';$("end").hidden=false;
   $("share").onclick=share;$("again").onclick=function(){setMode("practice")};
 }
 function toast(t){var e=$("toast");e.textContent=t;e.classList.add("on");setTimeout(function(){e.classList.remove("on")},1800)}
 function share(){
-  var t=(st.practice?"Whereabouts practice":"Whereabouts #"+st.no)+" "+(st.won?st.g.length:"X")+"/6\n"+grid()+"\n"+URL_SHORT;
+  var lab=TYPE==="town"?"":" "+TY[TYPE].one[0].toUpperCase()+TY[TYPE].one.slice(1);var t=(st.practice?"Whereabouts"+lab+" practice":"Whereabouts"+lab+" #"+st.no)+" "+(st.won?st.g.length:"X")+"/6\n"+grid()+"\n"+URL_SHORT;
   if(navigator.share&&/Mobi|Android|iPhone|iPad/.test(navigator.userAgent)){navigator.share({text:t}).catch(function(){});return}
   if(navigator.clipboard)navigator.clipboard.writeText(t).then(function(){toast("Copied: paste it anywhere")},function(){prompt("Copy this:",t)});else prompt("Copy this:",t);
 }
@@ -277,7 +304,7 @@ function hideSug(){$("sug").hidden=true;$("q").setAttribute("aria-expanded","fal
 function mark(){[].forEach.call($("sug").children,function(li,k){li.setAttribute("aria-selected",k===sel);if(k===sel){li.scrollIntoView({block:"nearest"});$("q").setAttribute("aria-activedescendant",li.id)}})}
 function submit(i){
   if(st.done)return;
-  if(i==null){var v=norm($("q").value);if(sel>=0&&matches.length)i=matches[sel];else{var ex=G.findIndex(function(g){return g.nn===v});if(ex<0){$("msg").textContent=v?"Pick a town from the list.":"";return}i=ex}}
+  if(i==null){var v=norm($("q").value);if(sel>=0&&matches.length)i=matches[sel];else{var ex=G.findIndex(function(g){return g.nn===v});if(ex<0){$("msg").textContent=v?"Pick a "+(TYPE==="county"?"county":"place")+" from the list.":"";return}i=ex}}
   var g=G[i];
   if(st.g.some(function(x){return x.g===g})){$("msg").textContent="You've already guessed "+g[0]+".";return}
   apply(g,false);$("q").value="";hideSug();render();
@@ -294,10 +321,36 @@ $("sug").addEventListener("mousedown",function(e){var li=e.target.closest("li");
 $("guessBtn").onclick=function(){submit()};
 document.addEventListener("click",function(e){if(!e.target.closest(".ask"))hideSug()});
 $("tDaily").onclick=function(){setMode("daily")};$("tPrac").onclick=function(){setMode("practice")};
-Promise.all([fetch("towns.json").then(function(r){return r.json()}),fetch("map.json").then(function(r){return r.json()})]).then(function(x){
-  T=x[0];M=x[1];A=T.answers;AD=A.filter(function(a){return a.d});G=T.guess;G.forEach(function(g){g.nn=norm(g[0])});
+function load(t){
+  var f={town:"towns.json",city:"towns.json",village:"villages.json",county:"counties.json"}[t];
+  if(DATA[f])return Promise.resolve(DATA[f]);
+  return fetch(f).then(function(r){return r.json()}).then(function(j){DATA[f]=j;return j});
+}
+function setType(t,m){
+  if(!TY[t])t="town";
+  [].forEach.call(document.querySelectorAll(".tabs.type button"),function(b){b.setAttribute("aria-pressed",b.dataset.t===t)});
+  $("status").textContent="Loading…";
+  load(t).then(function(j){
+    TYPE=t;store.set("uk-type",t);
+    if(t==="town"){A=j.answers.concat(j.cities);G=j.guess}
+    else if(t==="city"){A=j.cities;G=j.guess}
+    else if(t==="village"){A=j.answers;G=j.guess}
+    else{A=j.answers;G=A.map(function(a){var g=[a.n,a.lat,a.lon,a.n,a.mem];g.nat=a.nat;CA[a.n]=a.area;return g})}
+    AD=t==="town"||t==="village"?A.filter(function(a){return a.d}):A.slice();
+    if(!G[0].nn)G.forEach(function(g){g.nn=norm(g[0])});
+    var one=TY[t].one;
+    $("kick2").textContent="Guess the mystery "+one;$("ledeT").textContent=one;$("tnote").textContent=TY[t].note;
+    $("q").placeholder="Start typing a "+(t==="county"?"county":t==="village"?"village or town":"town")+"…";
+    $("q").value="";hideSug();$("msg").textContent="";
+    setMode(m||mode);
+  }).catch(function(){$("status").textContent="Sorry, that didn't load. Try refreshing."});
+}
+[].forEach.call(document.querySelectorAll(".tabs.type button"),function(b){b.onclick=function(){setType(b.dataset.t)}});
+Promise.all([load("town"),fetch("map.json").then(function(r){return r.json()})]).then(function(x){
+  T=x[0];M=x[1];
   $("base").setAttribute("d",Object.keys(M.p).map(function(k){return M.p[k]}).join(""));
-  if(/[?&]mode=practice/.test(location.search))setMode("practice");else setMode("daily");
+  var qt=(location.search.match(/[?&]type=(\w+)/)||[])[1]||store.get("uk-type")||"town";
+  setType(qt,/[?&]mode=practice/.test(location.search)?"practice":"daily");
 }).catch(function(){$("status").textContent="Sorry, the game didn't load. Try refreshing."});
 })();
 </script>

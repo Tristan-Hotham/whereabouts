@@ -1,6 +1,6 @@
 # Whereabouts
 
-A daily map game: guess the mystery UK town in six goes. **[Play it](https://maps.tristanhotham.com/whereabouts/)**
+A daily map game: guess the mystery UK town, city, village or county in six goes. **[Play it](https://maps.tristanhotham.com/whereabouts/)**
 
 ![Whereabouts](header.png)
 
@@ -11,14 +11,24 @@ A daily map game: guess the mystery UK town in six goes. **[Play it](https://map
 - Get it right, or run out of guesses, and the town appears on the map with what its name means, a shareable grid of coloured squares and arrows, and your stats.
 - **Today's town** is the same for everyone each day. **Practice** gives you a random town whenever you like.
 
-Daily towns are drawn from about 240 UK cities and towns of 40,000 people or more; Practice uses about 560 towns of 15,000 or more. You can guess any of about 3,000 towns. London's boroughs are left out as answers.
+**Modes.** Pick Town, City, Village or County. Each has its own daily answer, streak and stats, and the daily list reshuffles each time it runs out.
+
+- **Town**: daily towns are drawn from about 240 UK cities and towns of 40,000 people or more; Practice uses about 560 towns of 15,000 or more. You can guess any of about 3,000 towns.
+- **City**: the UK's 73 cities.
+- **Village**: about 1,200 daily villages of 2,000 to 5,000 people (2,500 for practice, from 1,000 people), England and Wales only. The sixth clue gives the distance and direction from the nearest town.
+- **County**: England's 47 ceremonial counties and the council areas of Wales, Scotland and Northern Ireland (112 in all). Clues add up the figures for each county's councils, and the last clue names its neighbours.
+
+London's boroughs are left out as answers.
 
 ## Files
 
 - `index.html`: the game (one page, no build step)
-- `towns.json`: answer towns with their clues and name meanings, the list of guessable towns, and area labels
+- `towns.json`: answer towns and cities with their clues and name meanings, the list of guessable towns, and area labels
+- `villages.json`: answer villages and the list of guessable places for Village mode
+- `counties.json`: counties and council areas, their member councils, neighbours, clues and name meanings
 - `map.json`: simplified council boundaries and the map projection
-- `build.py.txt`: the script that builds `towns.json` (Python; uses data from my Higher or Lower game and earlier studies)
+- `build.py.txt`: the script that builds `towns.json` and `villages.json`
+- `county.py.txt`: the script that builds `counties.json` (Python; uses data from my Higher or Lower game and earlier studies)
 
 ## Sources and licence
 
